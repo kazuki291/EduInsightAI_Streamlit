@@ -1,15 +1,20 @@
 import os
+import streamlit as st
 from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()
 
-api_key = os.getenv("GROQ_API_KEY")
+# Try Streamlit Secrets first, then local .env
+try:
+    api_key = st.secrets["GROQ_API_KEY"]
+except Exception:
+    api_key = os.getenv("GROQ_API_KEY")
 
 if not api_key:
     raise ValueError("GROQ_API_KEY not found.")
 
-client = Groq(api_key=api_key)
+client = Groq(api_key=api_key) 
 
 def generate_recommendation(student, prediction):
 
