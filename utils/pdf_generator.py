@@ -1,3 +1,6 @@
+import os
+from io import BytesIO
+from datetime import datetime
 from reportlab.platypus import (
     SimpleDocTemplate,
     Paragraph,
@@ -6,18 +9,39 @@ from reportlab.platypus import (
     TableStyle,
     HRFlowable,
 )
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.colors import HexColor, white
 from reportlab.lib import colors
 from reportlab.lib.units import inch
 from reportlab.lib.pagesizes import A4
-from datetime import datetime
 
 
-def generate_student_pdf(student, filename):
+def generate_student_pdf(student, filename_or_prediction=None, confidence=None, recommendation=None):
+    """
+    Generates a PDF report.
+    Compatible with:
+      - 4 arguments (Streamlit in-memory download): generate_student_pdf(student, prediction, confidence, recommendation)
+      - 2 arguments (Disk export): generate_student_pdf(student, filename)
+    """
+    is_buffer = False
+
+    # Check if second parameter is a disk filename/path or a prediction string
+    if isinstance(filename_or_prediction, str) and (filename_or_prediction.endswith(".pdf") or "/" in filename_or_prediction or "\\" in filename_or_prediction):
+        target = filename_or_prediction
+        pred = student.get("prediction", "N/A")
+        conf = student.get("confidence_score", 0.0)
+        rec = student.get("recommendation", "No AI recommendation available.")
+    else:
+        # In-memory buffer for Streamlit st.download_button
+        target = BytesIO()
+        is_buffer = True
+        pred = filename_or_prediction or student.get("prediction", "N/A")
+        conf = confidence if confidence is not None else student.get("confidence_score", 0.0)
+        rec = recommendation or student.get("recommendation", "No AI recommendation available.")
+
     doc = SimpleDocTemplate(
-        filename,
+        target,
         pagesize=A4,
         rightMargin=35,
         leftMargin=35,
@@ -27,27 +51,40 @@ def generate_student_pdf(student, filename):
 
     styles = getSampleStyleSheet()
 
-    title = styles["Heading1"]
-    title.alignment = TA_CENTER
-    title.textColor = HexColor("#0d6efd")
-    title.spaceAfter = 8
+    title = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Heading1'],
+        alignment=TA_CENTER,
+        textColor=HexColor("#0d6efd"),
+        spaceAfter=8
+    )
 
-    subtitle = styles["Heading2"]
-    subtitle.alignment = TA_CENTER
-    subtitle.textColor = HexColor("#555555")
-    subtitle.spaceAfter = 15
+    subtitle = ParagraphStyle(
+        'DocSubtitle',
+        parent=styles['Heading2'],
+        alignment=TA_CENTER,
+        textColor=HexColor("#555555"),
+        spaceAfter=15
+    )
 
-    heading = styles["Heading2"]
-    heading.textColor = HexColor("#0d6efd")
-    heading.spaceBefore = 10
-    heading.spaceAfter = 10
+    heading = ParagraphStyle(
+        'DocHeading2',
+        parent=styles['Heading2'],
+        textColor=HexColor("#0d6efd"),
+        spaceBefore=10,
+        spaceAfter=10
+    )
 
-    normal = styles["BodyText"]
-    normal.leading = 18
-    normal.spaceAfter = 8
+    normal = ParagraphStyle(
+        'DocBodyText',
+        parent=styles['BodyText'],
+        leading=18,
+        spaceAfter=8
+    )
 
     elements = []
 
+    # Title & Header
     elements.append(Paragraph("EduInsight AI", title))
     elements.append(Paragraph(
         "Artificial Intelligence-Based Student Performance Prediction Report",
@@ -59,18 +96,20 @@ def generate_student_pdf(student, filename):
             normal,
         )
     )
-    elements.append(HRFlowable(width="100%", thickness=1,
-                               color=HexColor("#0d6efd")))
+    elements.append(HRFlowable(width="100%", thickness=1, color=HexColor("#0d6efd")))
     elements.append(Spacer(1, 18))
 
+    # 1. Student Information
     elements.append(Paragraph("1. Student Information", heading))
+    
+    conf_str = f"{conf:.2f}%" if isinstance(conf, (int, float)) else f"{conf}%"
 
     student_table = Table(
         [
-            ["Student Name", student["student_name"]],
-            ["Student ID", student["student_id"]],
-            ["Prediction Result", student["prediction"]],
-            ["Confidence Score", f"{student['confidence_score']}%"],
+            ["Student Name", str(student.get("student_name", "N/A"))],
+            ["Student ID", str(student.get("student_id", student.get("id", "N/A")))],
+            ["Prediction Result", str(pred)],
+            ["Confidence Score", conf_str],
         ],
         colWidths=[2.3 * inch, 4.3 * inch],
     )
@@ -84,21 +123,20 @@ def generate_student_pdf(student, filename):
         ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
         ("TOPPADDING", (0, 0), (-1, -1), 10),
     ]))
-
     elements.append(student_table)
     elements.append(Spacer(1, 18))
 
+    # 2. Academic Performance
     elements.append(Paragraph("2. Academic Performance", heading))
-
     performance = Table(
         [
-            ["Attendance Percentage", f"{student['attendance_percentage']}%"],
-            ["Study Hours per Day", f"{student['study_hours_per_day']} Hours"],
-            ["Assignment Score", str(student["assignment_score"])],
-            ["Midterm Examination", str(student["midterm_score"])],
-            ["Final Examination", str(student["final_exam_score"])],
-            ["Class Participation", str(student["participation_score"])],
-            ["Average Sleep Hours", f"{student['sleep_hours']} Hours"],
+            ["Attendance Percentage", f"{student.get('attendance_percentage', 0)}%"],
+            ["Study Hours per Day", f"{student.get('study_hours_per_day', 0)} Hours"],
+            ["Assignment Score", str(student.get("assignment_score", 0))],
+            ["Midterm Examination", str(student.get("midterm_score", 0))],
+            ["Final Examination", str(student.get("final_exam_score", 0))],
+            ["Class Participation", str(student.get("participation_score", 0))],
+            ["Average Sleep Hours", f"{student.get('sleep_hours', 0)} Hours"],
         ],
         colWidths=[3.1 * inch, 3.5 * inch],
     )
@@ -110,34 +148,32 @@ def generate_student_pdf(student, filename):
         ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
     ]))
-
     elements.append(performance)
     elements.append(Spacer(1, 18))
 
+    # 3. AI Recommendation
     elements.append(Paragraph("3. AI Recommendation", heading))
+    clean_rec = str(rec).strip()
+    if len(clean_rec) > 1500:
+        clean_rec = clean_rec[:1500] + "... (continued)"
 
-    recommendation = student.get("recommendation") or "No AI recommendation available."
-    recommendation = recommendation.strip()
-    if len(recommendation) > 1500:
-        recommendation = recommendation[:1500] + "... (continued)"
-
-    for p in recommendation.split("\n"):
-        p = p.strip()
-        if p:
-            elements.append(Paragraph(p, normal))
+    for p in clean_rec.split("\n"):
+        p_clean = p.strip()
+        if p_clean:
+            elements.append(Paragraph(p_clean, normal))
 
     elements.append(Spacer(1, 15))
 
+    # 4. Prediction Summary
     elements.append(Paragraph("4. Prediction Summary", heading))
-
     summary_table = Table(
         [
-            ["Prediction Result", student["prediction"]],
-            ["Confidence Score", f"{student['confidence_score']}%"],
-            ["Attendance", f"{student['attendance_percentage']}%"],
+            ["Prediction Result", str(pred)],
+            ["Confidence Score", conf_str],
+            ["Attendance", f"{student.get('attendance_percentage', 0)}%"],
             ["Prediction Model", "Support Vector Machine (SVM)"],
-            ["Recommendation Engine", "Groq GPT-OSS 20B"],
-            ["Generated By", "EduInsight AI"],
+            ["Recommendation Engine", "Groq API (LLaMA 3.1)"],
+            ["Generated By", "EduInsight AI Student Performance Prediction System"],
         ],
         colWidths=[2.8 * inch, 3.8 * inch],
     )
@@ -148,37 +184,39 @@ def generate_student_pdf(student, filename):
         ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
         ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
     ]))
-
     elements.append(summary_table)
     elements.append(Spacer(1, 18))
 
+    # 5. AI Interpretation
     elements.append(Paragraph("5. AI Interpretation", heading))
-
-    if student["prediction"] == "High Performance":
-        interpretation = ("The AI model predicts that the student is likely to achieve excellent "
-                          "academic performance. Continue maintaining the current study habits.")
-    elif student["prediction"] == "Moderate Performance":
-        interpretation = ("The AI model predicts satisfactory academic performance with room for "
-                          "improvement through consistent study, participation and attendance.")
+    if pred == "High Performance":
+        interpretation = (
+            "The AI model predicts that the student is likely to achieve excellent "
+            "academic performance. Continue maintaining the current study habits."
+        )
+    elif pred == "Moderate Performance":
+        interpretation = (
+            "The AI model predicts satisfactory academic performance with room for "
+            "improvement through consistent study, participation and attendance."
+        )
     else:
         interpretation = (
             "The AI model predicts that the student is currently experiencing academic "
             "challenges based on the analysed learning indicators. Early academic intervention, "
             "improved attendance, stronger study habits and regular teacher support are recommended."
         )
-
     elements.append(Paragraph(interpretation, normal))
     elements.append(Spacer(1, 18))
 
+    # 6. Report Information
     elements.append(Paragraph("6. Report Information", heading))
-
     footer = Table(
         [
-            ["Generated By", "EduInsight AI"],
+            ["Generated By", "EduInsight AI Student Performance Prediction System"],
             ["Prediction Model", "Support Vector Machine (SVM)"],
-            ["Artificial Intelligence", "Groq GPT-OSS 20B"],
-            ["Institution", "Faculty of Information Technology and Communication"],
-            ["System", "EduInsight AI Student Performance Prediction System"],
+            ["Artificial Intelligence", "Groq API (LLaMA 3.1)"],
+            ["Institution", "Universiti Teknikal Malaysia Melaka (UTeM)"],
+            ["Faculty", "Faculty of Artificial Intelligence and Cybersecurity (FAIX)"],
             ["Generated Date", datetime.now().strftime("%d %B %Y")],
             ["Generated Time", datetime.now().strftime("%I:%M %p")],
         ],
@@ -192,25 +230,25 @@ def generate_student_pdf(student, filename):
         ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
         ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
     ]))
-
     elements.append(footer)
     elements.append(Spacer(1, 20))
 
     disclaimer = """
 <b>Disclaimer:</b><br/><br/>
-
-This report has been automatically generated by the EduInsight AI Student
-Performance Prediction System.
-
-Prediction results are produced using a Support Vector Machine (SVM)
-classification model, while personalised recommendations are generated
-using the Groq GPT-OSS 20B large language model.
-
-The generated insights are intended to assist teachers in monitoring
-student academic performance and planning early interventions.
-Final academic decisions should always be made by qualified educators
-using their professional judgement.
+This report has been automatically generated by the EduInsight AI Student Performance Prediction System.
+Prediction results are produced using a Support Vector Machine (SVM) classification model, while personalised recommendations are generated using the Groq LLaMA 3.1 large language model.
+The generated insights are intended to assist teachers in monitoring student academic performance and planning early interventions. Final academic decisions should always be made by qualified educators using their professional judgement.
 """
-
     elements.append(Paragraph(disclaimer, normal))
-    doc.build(elements) 
+    
+    doc.build(elements)
+
+    if is_buffer:
+        target.seek(0)
+        pdf_bytes = target.getvalue()
+        target.close()
+        return pdf_bytes
+    return target
+
+# Alias to avoid import name errors
+generate_pdf = generate_student_pdf
