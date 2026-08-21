@@ -1,3 +1,5 @@
+import datetime
+
 import streamlit as st
 import pandas as pd
 from database import get_connection
@@ -203,11 +205,11 @@ elif page == "🤖 Predict Student":
             # Persist to database
             conn = get_connection()
             cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE teacher_students
-                SET prediction=%s, confidence_score=%s, recommendation=%s, prediction_date=NOW()
-                WHERE id=%s
-            """, (prediction, confidence, recommendation, selected_db_id))
+            cursor.execute(""" UPDATE teacher_students SET prediction=%s, confidence_score=%s, recommendation=%s, prediction_date=%s WHERE id=%s""", (
+                             prediction, confidence, recommendation,
+             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            selected_db_id
+))
             conn.commit()
             conn.close()
 
