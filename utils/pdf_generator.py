@@ -17,6 +17,25 @@ from reportlab.lib.units import inch
 from reportlab.lib.pagesizes import A4
 
 
+def _safe_get(obj, key, default="N/A"):
+    """Safely extracts values whether obj is a dict, sqlite3.Row, or object."""
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    try:
+        # For sqlite3.Row or objects with key access
+        val = obj[key]
+        return val if val is not None else default
+    except Exception:
+        pass
+    try:
+        # For class instances
+        return getattr(obj, key, default)
+    except Exception:
+        return default
+
+
 def generate_student_pdf(student, filename_or_prediction=None, confidence=None, recommendation=None):
     """
     Generates a PDF report.
@@ -26,19 +45,32 @@ def generate_student_pdf(student, filename_or_prediction=None, confidence=None, 
     """
     is_buffer = False
 
+    # Extract student fields safely
+    name = str(_safe_get(student, "student_name", "N/A"))
+    s_id = str(_safe_get(student, "student_id", _safe_get(student, "id", "N/A")))
+    attendance = str(_safe_get(student, "attendance_percentage", 0))
+    study_hours = str(_safe_get(student, "study_hours_per_day", 0))
+    assignment = str(_safe_get(student, "assignment_score", 0))
+    midterm = str(_safe_get(student, "midterm_score", 0))
+    final_exam = str(_safe_get(student, "final_exam_score", 0))
+    participation = str(_safe_get(student, "participation_score", 0))
+    sleep = str(_safe_get(student, "sleep_hours", 0))
+
     # Check if second parameter is a disk filename/path or a prediction string
-    if isinstance(filename_or_prediction, str) and (filename_or_prediction.endswith(".pdf") or "/" in filename_or_prediction or "\\" in filename_or_prediction):
+    if isinstance(filename_or_prediction, str) and (
+        filename_or_prediction.endswith(".pdf") or "/" in filename_or_prediction or "\\" in filename_or_prediction
+    ):
         target = filename_or_prediction
-        pred = student.get("prediction", "N/A")
-        conf = student.get("confidence_score", 0.0)
-        rec = student.get("recommendation", "No AI recommendation available.")
+        pred = str(_safe_get(student, "prediction", "N/A"))
+        conf = _safe_get(student, "confidence_score", 0.0)
+        rec = str(_safe_get(student, "recommendation", "No AI recommendation available."))
     else:
         # In-memory buffer for Streamlit st.download_button
         target = BytesIO()
         is_buffer = True
-        pred = filename_or_prediction or student.get("prediction", "N/A")
-        conf = confidence if confidence is not None else student.get("confidence_score", 0.0)
-        rec = recommendation or student.get("recommendation", "No AI recommendation available.")
+        pred = str(filename_or_prediction) if filename_or_prediction is not None else str(_safe_get(student, "prediction", "N/A"))
+        conf = confidence if confidence is not None else _safe_get(student, "confidence_score", 0.0)
+        rec = str(recommendation) if recommendation is not None else str(_safe_get(student, "recommendation", "No AI recommendation available."))
 
     doc = SimpleDocTemplate(
         target,
@@ -106,9 +138,9 @@ def generate_student_pdf(student, filename_or_prediction=None, confidence=None, 
 
     student_table = Table(
         [
-            ["Student Name", str(student.get("student_name", "N/A"))],
-            ["Student ID", str(student.get("student_id", student.get("id", "N/A")))],
-            ["Prediction Result", str(pred)],
+            ["Student Name", name],
+            ["Student ID", s_id],
+            ["Prediction Result", pred],
             ["Confidence Score", conf_str],
         ],
         colWidths=[2.3 * inch, 4.3 * inch],
@@ -130,13 +162,13 @@ def generate_student_pdf(student, filename_or_prediction=None, confidence=None, 
     elements.append(Paragraph("2. Academic Performance", heading))
     performance = Table(
         [
-            ["Attendance Percentage", f"{student.get('attendance_percentage', 0)}%"],
-            ["Study Hours per Day", f"{student.get('study_hours_per_day', 0)} Hours"],
-            ["Assignment Score", str(student.get("assignment_score", 0))],
-            ["Midterm Examination", str(student.get("midterm_score", 0))],
-            ["Final Examination", str(student.get("final_exam_score", 0))],
-            ["Class Participation", str(student.get("participation_score", 0))],
-            ["Average Sleep Hours", f"{student.get('sleep_hours', 0)} Hours"],
+            ["Attendance Percentage", f"{attendance}%"],
+            ["Study Hours per Day", f"{study_hours} Hours"],
+            ["Assignment Score", assignment],
+            ["Midterm Examination", midterm],
+            ["Final Examination", final_exam],
+            ["Class Participation", participation],
+            ["Average Sleep Hours", f"{sleep} Hours"],
         ],
         colWidths=[3.1 * inch, 3.5 * inch],
     )
@@ -153,7 +185,7 @@ def generate_student_pdf(student, filename_or_prediction=None, confidence=None, 
 
     # 3. AI Recommendation
     elements.append(Paragraph("3. AI Recommendation", heading))
-    clean_rec = str(rec).strip()
+    clean_rec = rec.strip()
     if len(clean_rec) > 1500:
         clean_rec = clean_rec[:1500] + "... (continued)"
 
@@ -168,9 +200,9 @@ def generate_student_pdf(student, filename_or_prediction=None, confidence=None, 
     elements.append(Paragraph("4. Prediction Summary", heading))
     summary_table = Table(
         [
-            ["Prediction Result", str(pred)],
+            ["Prediction Result", pred],
             ["Confidence Score", conf_str],
-            ["Attendance", f"{student.get('attendance_percentage', 0)}%"],
+            ["Attendance", f"{attendance}%"],
             ["Prediction Model", "Support Vector Machine (SVM)"],
             ["Recommendation Engine", "Groq API (LLaMA 3.1)"],
             ["Generated By", "EduInsight AI Student Performance Prediction System"],
@@ -250,5 +282,5 @@ The generated insights are intended to assist teachers in monitoring student aca
         return pdf_bytes
     return target
 
-# Alias to avoid import name errors
-generate_pdf = generate_student_pdf
+# Aliases
+generate_pdf = generate_student_pdf 
