@@ -6,6 +6,7 @@ from database import get_connection
 from utils.svm_predict import predict_student
 from utils.groq_ai import generate_recommendation
 from utils.pdf_generator import generate_student_pdf
+from datetime import datetime
 
 st.set_page_config(
     page_title="EduInsight AI",
