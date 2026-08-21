@@ -1,0 +1,11 @@
+streamlit
+pandas
+numpy
+scikit-learn
+joblib
+groq
+python-dotenv
+reportlab
+matplotlib
+seaborn
+mysql-connector-python
